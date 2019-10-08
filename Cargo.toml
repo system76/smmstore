@@ -1,0 +1,8 @@
+[package]
+name = "smmstore"
+version = "0.1.0"
+authors = ["Jeremy Soller <jeremy@system76.com>"]
+edition = "2018"
+
+[dependencies]
+redox_uefi = "0.1"
