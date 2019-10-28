@@ -1,4 +1,5 @@
-use std::{char, env, fs, mem, process};
+use std::{char, env, fs, mem, process, slice};
+use std::collections::BTreeMap;
 use uefi::guid::{Guid, GuidKind};
 
 fn main() {
@@ -12,7 +13,9 @@ fn main() {
 
     let data = fs::read(path)
         .expect("failed to read file");
-    
+
+    let mut compact = BTreeMap::<&[u8], &[u8]>::new();
+
     let mut i = 0;
     while i + 8 <= data.len() {
         let (keysz, valsz) = unsafe {
@@ -30,44 +33,61 @@ fn main() {
         if i + keysz + valsz >= data.len() {
             break;
         }
+        
+        let ptr = unsafe { data.as_ptr().add(i) };
+        unsafe {
+            compact.insert(
+                slice::from_raw_parts(
+                    ptr,
+                    keysz
+                ),
+                slice::from_raw_parts(
+                    ptr.add(keysz),
+                    valsz
+                )
+            );
+        }
 
-        if keysz > mem::size_of::<Guid>() {
-            let (guid, varname, value) = unsafe {
-                let ptr = data.as_ptr().add(i);
-                i += keysz + valsz + 1;
+        i += keysz + valsz + 1;
+        i = (i + 3) & !3;
+    }
+
+    for (key, value) in compact.iter() {
+        if key.len() > mem::size_of::<Guid>() && value.len() > 0 {
+            let (guid, varname) = unsafe {
+                let ptr = key.as_ptr();
                 (
                     *(ptr as *const Guid),
-                    ptr.add(mem::size_of::<Guid>()) as *const u16,
-                    ptr.add(keysz)
+                    ptr.add(mem::size_of::<Guid>()) as *const u16
                 )
             };
 
             print!("\x1B[1m");
-            for j in 0..keysz - mem::size_of::<Guid>() {
-                unsafe {
-                    let w = *varname.add(j);
-                    if w == 0 {
-                        break;
-                    }
-                    if let Some(c) = char::from_u32(w as u32) {
-                        print!("{}", c);
-                    }
+            let mut j = mem::size_of::<Guid>();
+            while j + 1 < key.len() {
+                let w = 
+                    (key[j] as u16) |
+                    (key[j + 1] as u16) << 8;
+                if w == 0 {
+                    break;
                 }
+                if let Some(c) = char::from_u32(w as u32) {
+                    print!("{}", c);
+                }
+                j += 2;
             }
-            println!(": {}\x1B[0m", valsz);
+            println!(": {}\x1B[0m", value.len());
 
-            for row in 0..(valsz + 15)/16 {
+            for row in 0..(value.len() + 15)/16 {
                 print!("{:04X}:", row * 16);
                 for col in 0..16 {
                     let j = row * 16 + col;
-                    if j < valsz {
-                        print!(" {:02X}", unsafe { *value.add(j) });
+                    if j < value.len() {
+                        print!(" {:02X}", value[j]);
                     }
                 }
                 println!();
             }
         }
-
-        i = (i + 3) & !3;
     }
 }
