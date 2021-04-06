@@ -2,10 +2,13 @@ use std::{char, env, fs, mem, process, slice};
 use std::collections::BTreeMap;
 use uefi::guid::Guid;
 
+mod fvb;
+
 fn deserialize_v2(data: &[u8]) -> BTreeMap::<&[u8], &[u8]> {
     let mut compact = BTreeMap::<&[u8], &[u8]>::new();
 
-    let mut i = 0x88; // FVB + store headers
+    // FVB header + variable store header + ???
+    let mut i = mem::size_of::<fvb::FvbHeader>() + mem::size_of::<fvb::VariableStoreHeader>() + 36;
     while i + 8 <= data.len() {
         let (keysz, valsz) = unsafe {
             let ptr = data.as_ptr().add(i) as *const u32;
@@ -100,13 +103,17 @@ fn main() {
         }
     };
 
-    let data = fs::read(path)
-        .expect("failed to read file");
+    let data = fs::read(path).expect("failed to read file");
 
-    let mut compact = deserialize_v1(&data);
-    if compact.is_empty() {
-        compact = deserialize_v2(&data);
-    }
+    let header_data = &data[..mem::size_of::<fvb::FvbHeader>()];
+    let header = plain::from_bytes::<fvb::FvbHeader>(header_data).unwrap();
+    let compact = if header.is_valid() {
+        println!("Detected SMMSTOREv2 data");
+        deserialize_v2(&data)
+    } else {
+        println!("Assuming SMMSTOREv1 data");
+        deserialize_v1(&data)
+    };
 
     for (key, value) in compact.iter() {
         if key.len() > mem::size_of::<Guid>() && !value.is_empty() {
