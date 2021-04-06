@@ -1,6 +1,6 @@
 use std::{char, env, fs, mem, process, slice};
 use std::collections::BTreeMap;
-use uefi::guid::{Guid, GuidKind};
+use uefi::guid::Guid;
 
 fn main() {
     let path = match env::args().nth(1) {
@@ -33,7 +33,7 @@ fn main() {
         if i + keysz + valsz >= data.len() {
             break;
         }
-        
+
         let ptr = unsafe { data.as_ptr().add(i) };
         unsafe {
             compact.insert(
@@ -53,8 +53,8 @@ fn main() {
     }
 
     for (key, value) in compact.iter() {
-        if key.len() > mem::size_of::<Guid>() && value.len() > 0 {
-            let (guid, varname) = unsafe {
+        if key.len() > mem::size_of::<Guid>() && !value.is_empty() {
+            let (_guid, _varname) = unsafe {
                 let ptr = key.as_ptr();
                 (
                     *(ptr as *const Guid),
@@ -65,7 +65,7 @@ fn main() {
             print!("\x1B[1m");
             let mut j = mem::size_of::<Guid>();
             while j + 1 < key.len() {
-                let w = 
+                let w =
                     (key[j] as u16) |
                     (key[j + 1] as u16) << 8;
                 if w == 0 {
