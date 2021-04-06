@@ -7,17 +7,17 @@ pub const FVH_REVISION: u8 = 0x02;
 #[derive(Clone, Debug)]
 #[repr(C)]
 pub struct FvbHeader {
-    zero_vector: [u8; 16],
-    guid: guid::Guid,
-    volume_length: u64,
-    signature: [u8; 4],
-    attributes: u32,
-    header_length: u16,
-    checksum: u16,
-    ext_header_offset: u16,
-    reserved: u8,
-    revision: u8,
-    block_map: [(u32, u32); 2],
+    pub zero_vector: [u8; 16],
+    pub guid: guid::Guid,
+    pub volume_length: u64,
+    pub signature: [u8; 4],
+    pub attributes: u32,
+    pub header_length: u16,
+    pub checksum: u16,
+    pub ext_header_offset: u16,
+    pub reserved: u8,
+    pub revision: u8,
+    pub block_map: [(u32, u32); 2],
 }
 
 unsafe impl Plain for FvbHeader {}
@@ -32,19 +32,39 @@ impl FvbHeader {
 }
 
 #[derive(Copy, Clone, Debug)]
+#[repr(C)]
 pub struct VariableStoreHeader {
-    signature: guid::Guid,
-    size: u32,
-    format: u8,
-    state: u8,
-    reserved: u16,
-    reserved1: u32,
+    pub signature: guid::Guid,
+    pub size: u32,
+    pub format: u8,
+    pub state: u8,
+    pub reserved: u16,
+    pub reserved1: u32,
 }
 
-unsafe impl Plain for FvbHeader {}
+unsafe impl Plain for VariableStoreHeader {}
 
 impl VariableStoreHeader {
     pub fn is_valid(&self) -> bool {
         self.signature == guid::AUTHENTICATED_VARIABLE_GUID
     }
 }
+
+pub const VARIABLE_START_ID: u16 = 0x55AA;
+
+#[derive(Copy, Clone, Debug)]
+#[repr(C, packed)]
+pub struct AuthenticatedVariableHeader {
+    pub start_id: u16,
+    pub state: u8,
+    pub reserved: u8,
+    pub attributes: u32,
+    pub monotonic_count: u64,
+    pub timestamp: [u8; 16],
+    pub pubkey_index: u32,
+    pub name_size: u32,
+    pub data_size: u32,
+    pub vendor_guid: guid::Guid,
+}
+
+unsafe impl Plain for AuthenticatedVariableHeader {}
