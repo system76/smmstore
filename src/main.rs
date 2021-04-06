@@ -114,26 +114,13 @@ fn main() {
 
     let header_data = &data[..mem::size_of::<fvb::FvbHeader>()];
     let header = plain::from_bytes::<fvb::FvbHeader>(header_data).unwrap();
-    let compact = if header.is_valid() {
+    if header.is_valid() {
         println!("Detected SMMSTOREv2 data");
-        deserialize_v2(&data)
-    } else {
-        println!("Assuming SMMSTOREv1 data");
-        deserialize_v1(&data)
-    };
+        let compact = deserialize_v2(&data);
 
-    for (key, value) in compact.iter() {
-        if key.len() > mem::size_of::<Guid>() && !value.is_empty() {
-            let (_guid, _varname) = unsafe {
-                let ptr = key.as_ptr();
-                (
-                    *(ptr as *const Guid),
-                    ptr.add(mem::size_of::<Guid>()) as *const u16
-                )
-            };
-
+        for (key, value) in compact.iter() {
             print!("\x1B[1m");
-            let mut j = mem::size_of::<Guid>();
+            let mut j = 0;
             while j + 1 < key.len() {
                 let w =
                     (key[j] as u16) |
@@ -148,7 +135,7 @@ fn main() {
             }
             println!(": {}\x1B[0m", value.len());
 
-            for row in 0..(value.len() + 15)/16 {
+            for row in 0..(value.len() + 15) / 16 {
                 print!("{:04X}:", row * 16);
                 for col in 0..16 {
                     let j = row * 16 + col;
@@ -157,6 +144,40 @@ fn main() {
                     }
                 }
                 println!();
+            }
+        }
+    } else {
+        println!("Assuming SMMSTOREv1 data");
+        let compact = deserialize_v1(&data);
+
+        for (key, value) in compact.iter() {
+            if key.len() > mem::size_of::<Guid>() && !value.is_empty() {
+                print!("\x1B[1m");
+                let mut j = mem::size_of::<Guid>();
+                while j + 1 < key.len() {
+                    let w =
+                        (key[j] as u16) |
+                        (key[j + 1] as u16) << 8;
+                    if w == 0 {
+                        break;
+                    }
+                    if let Some(c) = char::from_u32(w as u32) {
+                        print!("{}", c);
+                    }
+                    j += 2;
+                }
+                println!(": {}\x1B[0m", value.len());
+
+                for row in 0..(value.len() + 15)/16 {
+                    print!("{:04X}:", row * 16);
+                    for col in 0..16 {
+                        let j = row * 16 + col;
+                        if j < value.len() {
+                            print!(" {:02X}", value[j]);
+                        }
+                    }
+                    println!();
+                }
             }
         }
     }
