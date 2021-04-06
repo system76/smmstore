@@ -2,18 +2,54 @@ use std::{char, env, fs, mem, process, slice};
 use std::collections::BTreeMap;
 use uefi::guid::Guid;
 
-fn main() {
-    let path = match env::args().nth(1) {
-        Some(some) => some,
-        None => {
-            eprintln!("smmstore [file]");
-            process::exit(1);
+fn deserialize_v2(data: &[u8]) -> BTreeMap::<&[u8], &[u8]> {
+    let mut compact = BTreeMap::<&[u8], &[u8]>::new();
+
+    let mut i = 0x88; // FVB + store headers
+    while i + 8 <= data.len() {
+        let (keysz, valsz) = unsafe {
+            let ptr = data.as_ptr().add(i) as *const u32;
+            i += 8;
+            (*ptr as usize, *ptr.add(1) as usize)
+        };
+
+        if keysz == 0 || keysz == 0xffff_ffff {
+            // No more entries
+            break;
         }
-    };
 
-    let data = fs::read(path)
-        .expect("failed to read file");
+        // GUID is not part of key anymore
+        if i + mem::size_of::<Guid>() + keysz + valsz >= data.len() {
+            // Data too short
+            break;
+        }
 
+        let ptr = unsafe { data.as_ptr().add(i) };
+        unsafe {
+            compact.insert(
+                slice::from_raw_parts(
+                    ptr,
+                    mem::size_of::<Guid>() + keysz
+                ),
+                slice::from_raw_parts(
+                    ptr.add(keysz),
+                    valsz
+                )
+            );
+        }
+
+        // No more NULL byte, account for GUID
+        i += mem::size_of::<Guid>() + keysz + valsz;
+        i = (i + 3) & !3;
+
+        // XXX: ?
+        i += 36;
+    }
+
+    compact
+}
+
+fn deserialize_v1(data: &[u8]) -> BTreeMap::<&[u8], &[u8]> {
     let mut compact = BTreeMap::<&[u8], &[u8]>::new();
 
     let mut i = 0;
@@ -24,13 +60,13 @@ fn main() {
             (*ptr as usize, *ptr.add(1) as usize)
         };
 
-        // No more entries
         if keysz == 0 || keysz == 0xffff_ffff {
+            // No more entries
             break;
         }
 
-        // Data too short
         if i + keysz + valsz >= data.len() {
+            // Data too short
             break;
         }
 
@@ -50,6 +86,26 @@ fn main() {
 
         i += keysz + valsz + 1;
         i = (i + 3) & !3;
+    }
+
+    compact
+}
+
+fn main() {
+    let path = match env::args().nth(1) {
+        Some(some) => some,
+        None => {
+            eprintln!("smmstore [file]");
+            process::exit(1);
+        }
+    };
+
+    let data = fs::read(path)
+        .expect("failed to read file");
+
+    let mut compact = deserialize_v1(&data);
+    if compact.is_empty() {
+        compact = deserialize_v2(&data);
     }
 
     for (key, value) in compact.iter() {
